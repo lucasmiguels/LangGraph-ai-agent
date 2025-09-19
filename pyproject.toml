@@ -1,0 +1,13 @@
+[project]
+name = "langgraph-ai-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "google-cloud-bigquery>=3.38.0",
+    "langchain>=0.3.27",
+    "langchain-google-vertexai>=2.1.2",
+    "langgraph>=0.6.7",
+    "pandas>=2.3.2",
+]
