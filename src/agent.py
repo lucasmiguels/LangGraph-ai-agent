@@ -20,6 +20,7 @@ BIGQUERY_PROJECT = os.getenv("BIGQUERY_PROJECT")
 CHAMADOS_TABLE_FULL_PATH = "datario.adm_central_atendimento_1746.chamado"
 BAIRROS_TABLE_FULL_PATH = "datario.dados_mestres.bairro"
 
+CATEGORICAL_COLUMNS = ["tipo", "subtipo", "categoria"]
 
 SIMULATE_EXECUTION = False
 
@@ -30,9 +31,10 @@ class AgentState(TypedDict):
     Define a estrutura do estado que flui através do grafo.
     """
     question: str                  
-    plan: Literal["sql", "chat"]   
+    plan: Literal["sql_direct", "sql_contextual", "chat"] 
     sql_query: str                
-    schema: str                    
+    schema: str  
+    category_context: str                  
     query_result: List[Dict]       
     answer: str                    
     error: str                     
@@ -41,10 +43,11 @@ class IntentRouter(BaseModel):
     """
     Define a estrutura de saída para o roteador de intenção.
     """
-    plan: Literal["sql", "chat"] = Field(
+    plan: Literal["sql_direct", "sql_contextual", "chat"] = Field(
         description="""
         A decisão sobre qual caminho seguir.
-        - 'sql': Use para perguntas que exigem consulta a dados sobre chamados, bairros, etc.
+        - 'sql_direct': Use se a pergunta for determinística sobre chamados do 1746, contagens, bairros e não possui filtros de texto (ex: "quantos chamados em 2023?").
+        - 'sql_contextual': Use para perguntas sobre chamados do 1746, contagens, bairros, subtipos que filtram por categorias de texto (ex: "qual o subtipo mais frequente de 'Estrutura de Imóvel'?", "quais bairros tiveram chamados de 'Reparo de poste fora de prumo'?").
         - 'chat': Use para saudações, perguntas genéricas ou conversas que não requerem dados.
         """
     )
@@ -112,6 +115,40 @@ def schema_fetcher(state: AgentState) -> dict:
         print(f"   Erro ao buscar o esquema: {e}")
         return {"error": f"Não foi possível buscar o esquema das tabelas: {e}"}
 
+
+def category_fetcher(state: AgentState) -> dict:
+    """
+    Busca os valores únicos das colunas 'tipo', 'subtipo' e 'categoria'
+    para dar contexto ao LLM sobre os filtros de texto corretos.
+    """
+    print(">> Nó: Buscador de Categorias (Category Fetcher)")
+    
+    context_details = []
+    
+    try:
+        client = bigquery.Client(project=BIGQUERY_PROJECT)
+        print("   Conectado ao BigQuery para buscar categorias.")
+        
+        for column in CATEGORICAL_COLUMNS:
+            # Esta consulta busca os valores distintos da coluna especificada.
+            query = f"SELECT DISTINCT {column} FROM `{CHAMADOS_TABLE_FULL_PATH}` WHERE {column} IS NOT NULL ORDER BY {column}"
+            
+            results = client.query(query).to_dataframe()
+            
+            # Formata os valores em uma lista de strings para o prompt
+            values = results[column].tolist()
+            context_details.append(f"Valores possíveis para a coluna '{column}':\n{values}\n")
+
+        formatted_context = "\n".join(context_details)
+        print("   Contexto de categorias obtido com sucesso.")
+        
+        return {"category_context": formatted_context}
+
+    except Exception as e:
+        print(f"   Erro ao buscar categorias: {e}")
+        # Retorna um contexto vazio em caso de erro para não quebrar o fluxo.
+        return {"category_context": ""}
+
 def sql_generator(state: AgentState) -> dict:
     """
     Gera uma consulta SQL válida e eficiente para o BigQuery com base na pergunta e no schema.
@@ -119,12 +156,21 @@ def sql_generator(state: AgentState) -> dict:
     print(">> Nó: Gerador de SQL")
     question = state["question"]
     schema = state["schema"]
+    category_context = state.get("category_context", "")
+    context_section = ""
+    if category_context:
+        context_section = f"""
+        INFORMAÇÕES DE CONTEXTO SOBRE AS CATEGORIAS:
+        Use a lista de valores abaixo para encontrar o termo e a coluna corretos para a pergunta do usuário.
+        {category_context}
+        """
 
     prompt = f"""
     Sua tarefa é ser um especialista em SQL do Google BigQuery. Seu objetivo principal é gerar uma única consulta SQL que seja **correta e funcional**.
 
     ESQUEMA DO BANCO DE DADOS:
     {schema}
+    {context_section}
 
     REGRAS ESSENCIAIS:
     1.  **Nomes de Tabela:** SEMPRE use o nome completo da tabela (ex: `projeto.dataset.tabela`) nas cláusulas `FROM` e `JOIN`.
@@ -246,6 +292,7 @@ workflow = StateGraph(AgentState)
 
 workflow.add_node("intent_router", intent_router)
 workflow.add_node("schema_fetcher", schema_fetcher)
+workflow.add_node("category_fetcher", category_fetcher)
 workflow.add_node("sql_generator", sql_generator)
 workflow.add_node("sql_executor", sql_executor)
 workflow.add_node("response_synthesizer", response_synthesizer)
@@ -253,36 +300,59 @@ workflow.add_node("conversational_responder", conversational_responder)
 
 workflow.set_entry_point("intent_router")
 
+workflow.add_edge("category_fetcher", "sql_generator")
 workflow.add_edge("schema_fetcher", "sql_generator")
 workflow.add_edge("sql_generator", "sql_executor")
 workflow.add_edge("sql_executor", "response_synthesizer")
 workflow.add_edge("response_synthesizer", END)
 workflow.add_edge("conversational_responder", END)
 
-# Define a aresta condicional a partir do roteador
-def route_logic(state: AgentState):
-    """Função de roteamento condicional."""
-    print("   Avaliando rota...")
-    if "error" in state and state["error"]:
-        print("   Erro detectado. Finalizando fluxo.")
-        return END 
+def route_after_intent(state: AgentState):
+    """Decide para onde ir após a intenção inicial."""
+    print("   Avaliando rota principal...")
+    if "error" in state and state["error"]: return END
     
     plan = state.get("plan")
-    if plan == "sql":
-        print("   Rota: Buscador de Esquema -> SQL")
-        return "schema_fetcher" 
-    else:
-        print("   Rota: Chat")
+    if plan == "chat":
         return "conversational_responder"
+    else: # Para qualquer tipo de SQL, o primeiro passo é sempre pegar o esquema
+        return "schema_fetcher"
 
 workflow.add_conditional_edges(
     "intent_router",
-    route_logic,
+    route_after_intent,
     {
-        "schema_fetcher": "schema_fetcher", 
-        "conversational_responder": "conversational_responder"
+        "conversational_responder": "conversational_responder",
+        "schema_fetcher": "schema_fetcher"
     }
 )
+
+def decide_after_schema(state: AgentState):
+    """
+    Depois de pegar o esquema, decide se precisa buscar o contexto
+    das categorias ou se pode ir direto para a geração de SQL.
+    """
+    print("   Avaliando rota secundária (pós-esquema)...")
+    if "error" in state and state["error"]: return END
+
+    plan = state.get("plan")
+    if plan == "sql_contextual":
+        print("   Rota: Contextual -> Buscador de Categorias")
+        return "category_fetcher"
+    else: 
+        # Se não, vai direto para a geração do SQL
+        print("   Rota: Direta -> Gerador de SQL")
+        return "sql_generator"
+
+workflow.add_conditional_edges(
+    "schema_fetcher",
+    decide_after_schema,
+    {
+        "category_fetcher": "category_fetcher",
+        "sql_generator": "sql_generator"
+    }
+)
+
 app = workflow.compile()
 
 print("\nGrafo compilado e pronto para uso.")
