@@ -7,6 +7,26 @@ from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
+import logging
+
+logger = logging.getLogger('DataAgentLogger')
+logger.setLevel(logging.INFO)
+
+# 2. Evita adicionar handlers duplicados em execuções repetidas
+if not logger.handlers:
+
+    # 3. Cria o handler que escreve no ARQUIVO (agent.log)
+    # MODIFICAÇÃO: mode='a' para anexar os logs em vez de sobrescrever
+    file_handler = logging.FileHandler('agent.log', mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(funcName)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+
+    # 4. Adiciona APENAS o handler de arquivo ao nosso logger
+    logger.addHandler(file_handler)
+
+    # 5. Desliga a propagação para o root logger
+    logger.propagate = False
 
 load_dotenv()
 
@@ -20,9 +40,7 @@ BIGQUERY_PROJECT = os.getenv("BIGQUERY_PROJECT")
 CHAMADOS_TABLE_FULL_PATH = "datario.adm_central_atendimento_1746.chamado"
 BAIRROS_TABLE_FULL_PATH = "datario.dados_mestres.bairro"
 
-CATEGORICAL_COLUMNS = ["tipo", "subtipo", "categoria"]
-
-SIMULATE_EXECUTION = False
+CATEGORICAL_COLUMNS = ["tipo", "categoria", "subtipo"]
 
 print("Configuração inicial completa.")
 
@@ -56,7 +74,7 @@ def intent_router(state: AgentState) -> dict:
     """
     Decide se a pergunta do usuário requer uma consulta ao banco de dados ou é conversacional.
     """
-    print(">> Nó: Roteador de Intenção")
+    logger.info(">> Nó: Roteador de Intenção")
     question = state["question"]
     
     structured_llm = llm.with_structured_output(IntentRouter)
@@ -72,10 +90,10 @@ def intent_router(state: AgentState) -> dict:
     
     try:
         routing_decision = structured_llm.invoke(prompt)
-        print(f"   Decisão: {routing_decision.plan}")
+        logger.info(f"   Decisão: {routing_decision.plan}")
         return {"plan": routing_decision.plan}
     except Exception as e:
-        print(f"   Erro no roteador: {e}")
+        logger.info(f"   Erro no roteador: {e}")
         return {"error": "Falha ao decidir o plano de ação."}
 
 def schema_fetcher(state: AgentState) -> dict:
@@ -83,7 +101,7 @@ def schema_fetcher(state: AgentState) -> dict:
     Busca o esquema (colunas e tipos) das tabelas no BigQuery
     e o formata em uma string para ser usada no prompt do LLM.
     """
-    print(">> Nó: Buscador de Esquema (Schema Fetcher)")
+    logger.info(">> Nó: Buscador de Esquema (Schema Fetcher)")
     
 
     table_full_paths = [CHAMADOS_TABLE_FULL_PATH, BAIRROS_TABLE_FULL_PATH]
@@ -92,7 +110,7 @@ def schema_fetcher(state: AgentState) -> dict:
     
     try:
         client = bigquery.Client(project=BIGQUERY_PROJECT)
-        print(f"   Conectado ao BigQuery para buscar esquema.")
+        logger.info(f"   Conectado ao BigQuery para buscar esquema.")
         
         for table_path in table_full_paths:
             table = client.get_table(table_path)
@@ -107,12 +125,12 @@ def schema_fetcher(state: AgentState) -> dict:
             schema_details.append("") 
 
         formatted_schema = "\n".join(schema_details)
-        print(f"   Esquema obtido com sucesso:\n{formatted_schema}")
+        logger.debug(f"   Esquema obtido com sucesso:\n{formatted_schema}")
         
         return {"schema": formatted_schema}
 
     except Exception as e:
-        print(f"   Erro ao buscar o esquema: {e}")
+        logger.error(f"   Erro ao buscar o esquema: {e}")
         return {"error": f"Não foi possível buscar o esquema das tabelas: {e}"}
 
 
@@ -121,13 +139,13 @@ def category_fetcher(state: AgentState) -> dict:
     Busca os valores únicos das colunas 'tipo', 'subtipo' e 'categoria'
     para dar contexto ao LLM sobre os filtros de texto corretos.
     """
-    print(">> Nó: Buscador de Categorias (Category Fetcher)")
+    logger.info(">> Nó: Buscador de Categorias (Category Fetcher)")
     
     context_details = []
     
     try:
         client = bigquery.Client(project=BIGQUERY_PROJECT)
-        print("   Conectado ao BigQuery para buscar categorias.")
+        logger.info("   Conectado ao BigQuery para buscar categorias.")
         
         for column in CATEGORICAL_COLUMNS:
             # Esta consulta busca os valores distintos da coluna especificada.
@@ -140,12 +158,13 @@ def category_fetcher(state: AgentState) -> dict:
             context_details.append(f"Valores possíveis para a coluna '{column}':\n{values}\n")
 
         formatted_context = "\n".join(context_details)
-        print("   Contexto de categorias obtido com sucesso.")
+        logger.info("   Contexto de categorias obtido com sucesso.")
+        logger.debug(f"   Contexto de categorias: {formatted_context}")
         
         return {"category_context": formatted_context}
 
     except Exception as e:
-        print(f"   Erro ao buscar categorias: {e}")
+        logger.error(f"   Erro ao buscar categorias: {e}")
         # Retorna um contexto vazio em caso de erro para não quebrar o fluxo.
         return {"category_context": ""}
 
@@ -153,7 +172,7 @@ def sql_generator(state: AgentState) -> dict:
     """
     Gera uma consulta SQL válida e eficiente para o BigQuery com base na pergunta e no schema.
     """
-    print(">> Nó: Gerador de SQL")
+    logger.info(">> Nó: Gerador de SQL")
     question = state["question"]
     schema = state["schema"]
     category_context = state.get("category_context", "")
@@ -192,51 +211,47 @@ def sql_generator(state: AgentState) -> dict:
     SQL GERADO:
     """
     
+    logger.info("--- INÍCIO DO PROMPT PARA O GERADOR DE SQL ---")
+    logger.info(prompt)
+    logger.info("--- FIM DO PROMPT PARA O GERADOR DE SQL ---")
+
     try:
         sql_query = llm.invoke(prompt).content
         cleaned_sql_query = sql_query.strip().replace("```sql", "").replace("```", "").strip()
-        print(f"   SQL Gerado: \n{cleaned_sql_query}")
+        logger.info(f"   SQL Gerado: \n{cleaned_sql_query}")
         
         return {"sql_query": cleaned_sql_query}
     
     except Exception as e:
-        print(f"   Erro na geração de SQL: {e}")
+        logger.error(f"   Erro na geração de SQL: {e}")
         return {"error": "Falha ao gerar a consulta SQL."}
 def sql_executor(state: AgentState) -> dict:
     """
     Executa a consulta no BigQuery e retorna o resultado.
     """
-    print(">> Nó: Executor de SQL")
+    logger.info(">> Nó: Executor de SQL")
     sql_query = state["sql_query"]
-
-    if SIMULATE_EXECUTION:
-        print("   --- MODO DE SIMULAÇÃO ATIVADO ---")
-        mock_data = [
-            {'coluna_1': 'dado_a', 'coluna_2': 123},
-            {'coluna_1': 'dado_b', 'coluna_2': 456}
-        ]
-        print(f"   Resultado Simulado: {mock_data}")
-        return {"query_result": mock_data}
 
     try:
         client = bigquery.Client(project=BIGQUERY_PROJECT)
-        print("   Conectado ao BigQuery.")
+        logger.info("   Conectado ao BigQuery.")
         query_job = client.query(sql_query)
         
         results = query_job.to_dataframe()
         query_result = results.to_dict('records')
         
-        print(f"   Consulta executada com sucesso. {len(query_result)} linhas retornadas.")
+        logger.info(f"   Consulta executada com sucesso. {len(query_result)} linhas retornadas.")
+        logger.debug(f"Resultado da consulta (amostra): {query_result[:5]}") # Loga as 5 primeiras linhas
         return {"query_result": query_result}
     except Exception as e:
-        print(f"   Erro na execução da consulta: {e}")
+        logger.error(f"   Erro na execução da consulta: {e}")
         return {"error": f"Erro ao executar a consulta no BigQuery: {e}"}
 
 def response_synthesizer(state: AgentState) -> dict:
     """
     Gera uma resposta em linguagem natural com base nos resultados da consulta.
     """
-    print(">> Nó: Sintetizador de Resposta")
+    logger.info(">> Nó: Sintetizador de Resposta")
     question = state["question"]
     query_result = state["query_result"]
 
@@ -259,17 +274,17 @@ def response_synthesizer(state: AgentState) -> dict:
     
     try:
         answer = llm.invoke(prompt).content
-        print(f"   Resposta Gerada: {answer}")
+        logger.info(f"   Resposta Gerada: {answer}")
         return {"answer": answer}
     except Exception as e:
-        print(f"   Erro na síntese da resposta: {e}")
+        logger.error(f"   Erro na síntese da resposta: {e}")
         return {"error": "Falha ao gerar a resposta final."}
 
 def conversational_responder(state: AgentState) -> dict:
     """
     Gera uma resposta conversacional para perguntas que não requerem acesso a dados.
     """
-    print(">> Nó: Resposta Conversacional")
+    logger.info(">> Nó: Resposta Conversacional")
     question = state["question"]
     
     prompt = f"""
@@ -280,10 +295,10 @@ def conversational_responder(state: AgentState) -> dict:
     
     try:
         answer = llm.invoke(prompt).content
-        print(f"   Resposta Gerada: {answer}")
+        logger.info(f"   Resposta Gerada: {answer}")
         return {"answer": answer}
     except Exception as e:
-        print(f"   Erro na resposta conversacional: {e}")
+        logger.error(f"   Erro na resposta conversacional: {e}")
         return {"error": "Falha ao gerar uma resposta."}
 
 # --- Montagem do Grafo ---
@@ -301,7 +316,6 @@ workflow.add_node("conversational_responder", conversational_responder)
 workflow.set_entry_point("intent_router")
 
 workflow.add_edge("category_fetcher", "sql_generator")
-workflow.add_edge("schema_fetcher", "sql_generator")
 workflow.add_edge("sql_generator", "sql_executor")
 workflow.add_edge("sql_executor", "response_synthesizer")
 workflow.add_edge("response_synthesizer", END)
@@ -309,7 +323,7 @@ workflow.add_edge("conversational_responder", END)
 
 def route_after_intent(state: AgentState):
     """Decide para onde ir após a intenção inicial."""
-    print("   Avaliando rota principal...")
+    logger.info("   Avaliando rota principal...")
     if "error" in state and state["error"]: return END
     
     plan = state.get("plan")
@@ -332,16 +346,16 @@ def decide_after_schema(state: AgentState):
     Depois de pegar o esquema, decide se precisa buscar o contexto
     das categorias ou se pode ir direto para a geração de SQL.
     """
-    print("   Avaliando rota secundária (pós-esquema)...")
+    logger.info("   Avaliando rota secundária (pós-esquema)...")
     if "error" in state and state["error"]: return END
 
     plan = state.get("plan")
     if plan == "sql_contextual":
-        print("   Rota: Contextual -> Buscador de Categorias")
+        logger.info("   Rota: Contextual -> Buscador de Categorias")
         return "category_fetcher"
     else: 
         # Se não, vai direto para a geração do SQL
-        print("   Rota: Direta -> Gerador de SQL")
+        logger.info("   Rota: Direta -> Gerador de SQL")
         return "sql_generator"
 
 workflow.add_conditional_edges(
@@ -355,7 +369,7 @@ workflow.add_conditional_edges(
 
 app = workflow.compile()
 
-print("\nGrafo compilado e pronto para uso.")
+logger.info("\nGrafo compilado e pronto para uso.")
 
 # --- Função para Execução e Teste ---
 
