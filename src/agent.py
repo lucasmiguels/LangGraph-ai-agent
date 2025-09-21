@@ -8,6 +8,7 @@ from .nodes.sqlgen import sql_generator
 from .nodes.sqlexec import sql_executor
 from .nodes.sqlrespond import response_synthesizer
 from .nodes.chat import conversational_responder
+from .nodes.sqlvalid import sql_validator
 
 def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
@@ -16,13 +17,14 @@ def build_graph() -> StateGraph:
     graph.add_node("schema_fetcher", schema_fetcher)
     graph.add_node("category_fetcher", category_fetcher)
     graph.add_node("sql_generator", sql_generator)
+    graph.add_node("sql_validator", sql_validator)
     graph.add_node("sql_executor", sql_executor)
     graph.add_node("response_synthesizer", response_synthesizer)
     graph.add_node("conversational_responder", conversational_responder)
 
     graph.set_entry_point("intent_router")
     graph.add_edge("category_fetcher", "sql_generator")
-    graph.add_edge("sql_generator", "sql_executor")
+    graph.add_edge("sql_generator", "sql_validator")
     graph.add_edge("sql_executor", "response_synthesizer")
     graph.add_edge("response_synthesizer", END)
     graph.add_edge("conversational_responder", END)
@@ -67,6 +69,26 @@ def build_graph() -> StateGraph:
         {
             "category_fetcher": "category_fetcher",
             "sql_generator": "sql_generator"
+        }
+    )
+
+    def decide_after_validation(state: AgentState):
+        """
+        Após a validação, decide se continua para a execução ou termina com erro.
+        """
+        logger.info("Avaliando resultado da validação do SQL...")
+        if state.get("error"):
+            logger.warning("Fluxo interrompido devido a SQL inválido.")
+            return END
+        else:
+            logger.info("SQL válido, prosseguindo para a execução.")
+            return "sql_executor"
+
+    graph.add_conditional_edges(
+        "sql_validator", 
+        decide_after_validation, {
+        "sql_executor": "sql_executor",
+        END: END
         }
     )
 

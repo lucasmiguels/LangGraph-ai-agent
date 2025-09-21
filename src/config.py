@@ -21,3 +21,13 @@ CHAMADOS_TABLE_FULL_PATH = "datario.adm_central_atendimento_1746.chamado"
 BAIRROS_TABLE_FULL_PATH  = "datario.dados_mestres.bairro"
 
 CATEGORICAL_COLUMNS = ["tipo", "categoria", "subtipo"]
+
+FORBIDDEN_SQL_KEYWORDS = [
+    "UPDATE", "DELETE", "INSERT", "DROP", "CREATE", 
+    "ALTER", "TRUNCATE", "MERGE", "GRANT", "REVOKE"
+]
+
+ALLOWED_TABLES = [
+    CHAMADOS_TABLE_FULL_PATH,
+    BAIRROS_TABLE_FULL_PATH
+]
