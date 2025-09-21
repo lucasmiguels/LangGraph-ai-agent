@@ -5,3 +5,8 @@ __pycache__/
 *.pyo
 *.pyd
 .env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+src/agent.log
