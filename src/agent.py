@@ -1,31 +1,28 @@
 import os
 import pandas as pd
-from typing import TypedDict, Literal, List, Dict, Any
+from typing import TypedDict, Literal, List, Dict, Any, Annotated
 from dotenv import load_dotenv
 from google.cloud import bigquery
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, END, add_messages
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 import logging
 
 logger = logging.getLogger('DataAgentLogger')
 logger.setLevel(logging.INFO)
 
-# 2. Evita adicionar handlers duplicados em execuções repetidas
 if not logger.handlers:
 
-    # 3. Cria o handler que escreve no ARQUIVO (agent.log)
-    # MODIFICAÇÃO: mode='a' para anexar os logs em vez de sobrescrever
     file_handler = logging.FileHandler('agent.log', mode='a', encoding='utf-8')
     file_handler.setLevel(logging.INFO)
     file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(funcName)s - %(message)s')
     file_handler.setFormatter(file_formatter)
 
-    # 4. Adiciona APENAS o handler de arquivo ao nosso logger
     logger.addHandler(file_handler)
 
-    # 5. Desliga a propagação para o root logger
     logger.propagate = False
 
 load_dotenv()
@@ -48,7 +45,7 @@ class AgentState(TypedDict):
     """
     Define a estrutura do estado que flui através do grafo.
     """
-    question: str                  
+    messages: Annotated[list, add_messages]                  
     plan: Literal["sql_direct", "sql_contextual", "chat"] 
     sql_query: str                
     schema: str  
@@ -70,22 +67,36 @@ class IntentRouter(BaseModel):
         """
     )
 
+def format_chat_history(messages: List[BaseMessage]) -> str:
+    """Formata o histórico de mensagens para ser usado em um prompt."""
+    if not messages:
+        return ""
+    
+    history_str = "Histórico da Conversa Anterior:\n"
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            history_str += f"Usuário: {msg.content}\n"
+        elif isinstance(msg, AIMessage):
+            history_str += f"Assistente: {msg.content}\n"
+    return history_str
+
 def intent_router(state: AgentState) -> dict:
     """
-    Decide se a pergunta do usuário requer uma consulta ao banco de dados ou é conversacional.
+    Decide o plano de ação com base na última pergunta do usuário e no histórico.
     """
     logger.info(">> Nó: Roteador de Intenção")
-    question = state["question"]
     
+    # A pergunta atual é a última da lista de mensagens
+    question = state['messages'][-1].content
+    chat_history = format_chat_history(state['messages'][:-1])
+
     structured_llm = llm.with_structured_output(IntentRouter)
     
     prompt = f"""
-    Analise a seguinte pergunta do usuário e decida o plano de ação.
+    {chat_history}
+    Analise a ÚLTIMA pergunta do usuário abaixo e decida o plano de ação.
 
-    Pergunta: "{question}"
-
-    Selecione 'sql' se a pergunta for sobre chamados do 1746, contagens, bairros, subtipos, etc.
-    Selecione 'chat' para saudações, agradecimentos ou perguntas genéricas não relacionadas aos dados.
+    ÚLTIMA Pergunta: "{question}"
     """
     
     try:
@@ -173,7 +184,8 @@ def sql_generator(state: AgentState) -> dict:
     Gera uma consulta SQL válida e eficiente para o BigQuery com base na pergunta e no schema.
     """
     logger.info(">> Nó: Gerador de SQL")
-    question = state["question"]
+    question = state['messages'][-1].content
+    chat_history = format_chat_history(state['messages'][:-1])
     schema = state["schema"]
     category_context = state.get("category_context", "")
     context_section = ""
@@ -186,6 +198,7 @@ def sql_generator(state: AgentState) -> dict:
 
     prompt = f"""
     Sua tarefa é ser um especialista em SQL do Google BigQuery. Seu objetivo principal é gerar uma única consulta SQL que seja **correta e funcional**.
+    {chat_history}
 
     ESQUEMA DO BANCO DE DADOS:
     {schema}
@@ -252,51 +265,52 @@ def response_synthesizer(state: AgentState) -> dict:
     Gera uma resposta em linguagem natural com base nos resultados da consulta.
     """
     logger.info(">> Nó: Sintetizador de Resposta")
-    question = state["question"]
+    question = state['messages'][-1].content
     query_result = state["query_result"]
 
     # Se não houver resultado, informe o usuário.
     if not query_result:
-        return {"answer": "Não encontrei dados para responder a sua pergunta."}
+        answer = "Não encontrei dados para responder a sua pergunta."
+    else:
+        prompt = f"""
+        Você é um assistente de análise de dados. Sua tarefa é responder à pergunta original do usuário de forma clara e objetiva,
+        com base nos dados retornados pelo banco de dados.
 
-    prompt = f"""
-    Você é um assistente de análise de dados. Sua tarefa é responder à pergunta original do usuário de forma clara e objetiva,
-    com base nos dados retornados pelo banco de dados.
+        Pergunta Original do Usuário:
+        "{question}"
 
-    Pergunta Original do Usuário:
-    "{question}"
+        Dados Retornados (em formato de lista de dicionários Python):
+        {query_result}
 
-    Dados Retornados (em formato de lista de dicionários Python):
-    {query_result}
+        Sua Resposta (em português, amigável e direta):
+        """
+        try:
+            answer = llm.invoke(prompt).content
+        except Exception as e:
+            logger.error(f"Erro na síntese da resposta: {e}", exc_info=True)
+            return {"error": "Falha ao gerar a resposta final."}
 
-    Sua Resposta (em português, amigável e direta):
-    """
-    
-    try:
-        answer = llm.invoke(prompt).content
-        logger.info(f"   Resposta Gerada: {answer}")
-        return {"answer": answer}
-    except Exception as e:
-        logger.error(f"   Erro na síntese da resposta: {e}")
-        return {"error": "Falha ao gerar a resposta final."}
+    logger.info(f"Resposta Gerada: {answer}")
+    return {"messages": [AIMessage(content=answer)], "answer": answer}
 
 def conversational_responder(state: AgentState) -> dict:
     """
     Gera uma resposta conversacional para perguntas que não requerem acesso a dados.
     """
     logger.info(">> Nó: Resposta Conversacional")
-    question = state["question"]
+    question = state['messages'][-1].content
+    chat_history = format_chat_history(state['messages'][:-1])
     
     prompt = f"""
     Você é um assistente amigável e flamenguista. Responda à seguinte pergunta do usuário de forma conversacional. Sempre tente ser um pouco clubista.
-
+    {chat_history}
     Pergunta: "{question}"
     """
     
     try:
         answer = llm.invoke(prompt).content
         logger.info(f"   Resposta Gerada: {answer}")
-        return {"answer": answer}
+        return {"messages": [AIMessage(content=answer)], "answer": answer}
     except Exception as e:
         logger.error(f"   Erro na resposta conversacional: {e}")
         return {"error": "Falha ao gerar uma resposta."}
@@ -367,47 +381,32 @@ workflow.add_conditional_edges(
     }
 )
 
-app = workflow.compile()
+with SqliteSaver.from_conn_string("agent_memory.sqlite") as memory:
 
-logger.info("\nGrafo compilado e pronto para uso.")
+    app = workflow.compile(checkpointer=memory)
+    logger.info("\nGrafo compilado com memória e pronto para uso interativo.")
 
-# --- Função para Execução e Teste ---
-
-def run_agent(question: str):
-    """
-    Executa o agente com uma pergunta e imprime o resultado final.
-    """
-    print(f"\n=================================================")
-    print(f" EXECUTANDO AGENTE PARA A PERGUNTA: '{question}'")
-    print(f"=================================================\n")
+    thread_id = input("Digite um ID para esta conversa (ex: 'conversa-1'): ")
+    if not thread_id:
+        thread_id = "default-conversation"
     
-    inputs = {"question": question}
-    final_state = app.invoke(inputs)
-    
-    print("\n-------------------------------------------------")
-    if "error" in final_state and final_state["error"]:
-        print(f" ERRO: {final_state['error']}")
-    else:
-        print(f" RESPOSTA FINAL:\n{final_state['answer']}")
-    print("-------------------------------------------------\n")
+    config = {"configurable": {"thread_id": thread_id}}
+    print(f"Memória carregada para a conversa: '{thread_id}'. Digite 'sair' para terminar.")
 
-# --- Perguntas para Teste ---
+    while True:
+        user_input = input("Usuário: ")
+        if user_input.lower() in ["sair", "exit", "quit"]:
+            print("Agente: Até logo!")
+            break
+        
+        inputs = {"messages": [HumanMessage(content=user_input)]}
+        
+        try:
+            final_state = app.invoke(inputs, config=config)
 
-if __name__ == "__main__":
-    # Pergunta de Análise Simples 1
-    run_agent("Quantos chamados foram abertos no dia 28/11/2024?")
+            if final_state and final_state.get("answer"):
+                print(f"Agente: {final_state['answer']}")
 
-    # Pergunta de Análise Simples 2
-    run_agent("Qual o subtipo de chamado mais comum relacionado a 'Iluminação Pública'?")
-
-    # Pergunta com JOIN e Agregação 
-    run_agent("Quais os 3 bairros que mais tiveram chamados abertos sobre 'reparo de buraco' em 2023?")
-    
-    # Pergunta com Agregação 
-    run_agent("Qual o nome da unidade organizacional que mais atendeu chamados de 'Fiscalização de estacionamento irregular'?")
-
-    # Pergunta Conversacional 1
-    run_agent("Olá, tudo bem?")
-
-    # Pergunta Conversacional 2
-    run_agent("Me dê sugestões de brincadeiras para fazer com meu cachorro!")
+        except Exception as e:
+            logger.error(f"Erro durante a execução do agente: {e}", exc_info=True)
+            print(f"Agente: Desculpe, ocorreu um erro. Verifique o arquivo agent.log para detalhes.")
