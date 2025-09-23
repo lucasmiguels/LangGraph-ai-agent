@@ -1,0 +1,246 @@
+{
+    "common": {
+      "actions": {
+        "cancel": "Cancelar",
+        "confirm": "Confirmar",
+        "continue": "Continuar",
+        "goBack": "Voltar",
+        "reset": "Redefinir",
+        "submit": "Enviar"
+      },
+      "status": {
+        "loading": "Carregando...",
+        "error": {
+          "default": "Ocorreu um erro",
+          "serverConnection": "N\u00e3o foi poss\u00edvel conectar ao servidor"
+        }
+      }
+    },
+    "auth": {
+      "login": {
+        "title": "Entre para acessar o aplicativo",
+        "form": {
+          "email": {
+            "label": "Endere\u00e7o de e-mail",
+            "required": "e-mail \u00e9 um campo obrigat\u00f3rio",
+            "placeholder": "me@example.com"
+          },
+          "password": {
+            "label": "Senha",
+            "required": "senha \u00e9 um campo obrigat\u00f3rio"
+          },
+          "actions": {
+            "signin": "Entrar"
+          },
+          "alternativeText": {
+            "or": "OU"
+          }
+        },
+        "errors": {
+          "default": "N\u00e3o foi poss\u00edvel fazer login",
+          "signin": "Tente entrar com uma conta diferente",
+          "oauthSignin": "Tente entrar com uma conta diferente",
+          "redirectUriMismatch": "O URI de redirecionamento n\u00e3o corresponde \u00e0 configura\u00e7\u00e3o do app OAuth",
+          "oauthCallback": "Tente entrar com uma conta diferente",
+          "oauthCreateAccount": "Tente entrar com uma conta diferente",
+          "emailCreateAccount": "Tente entrar com uma conta diferente",
+          "callback": "Tente entrar com uma conta diferente",
+          "oauthAccountNotLinked": "Para confirmar sua identidade, entre com a mesma conta utilizada originalmente",
+          "emailSignin": "N\u00e3o foi poss\u00edvel enviar o e-mail",
+          "emailVerify": "Verifique seu e-mail; um novo e-mail foi enviado",
+          "credentialsSignin": "Falha no login. Verifique se os dados informados est\u00e3o corretos",
+          "sessionRequired": "Fa\u00e7a login para acessar esta p\u00e1gina"
+        }
+      },
+      "provider": {
+        "continue": "Continuar com {{provider}}"
+      }
+    },
+    "chat": {
+      "input": {
+        "placeholder": "Digite sua mensagem aqui...",
+        "actions": {
+          "send": "Enviar mensagem",
+          "stop": "Parar tarefa",
+          "attachFiles": "Anexar arquivos"
+        }
+      },
+      "commands": {
+        "button": "Ferramentas",
+        "changeTool": "Trocar ferramenta",
+        "availableTools": "Ferramentas dispon\u00edveis"
+      },
+      "speech": {
+        "start": "Iniciar grava\u00e7\u00e3o",
+        "stop": "Parar grava\u00e7\u00e3o",
+        "connecting": "Conectando"
+      },
+      "fileUpload": {
+        "dragDrop": "Arraste e solte arquivos aqui",
+        "browse": "Procurar arquivos",
+        "sizeLimit": "Limite:",
+        "errors": {
+          "failed": "Falha ao enviar",
+          "cancelled": "Envio cancelado de"
+        },
+        "actions": {
+          "cancelUpload": "Cancelar envio",
+          "removeAttachment": "Remover anexo"
+        }
+      },
+      "messages": {
+        "status": {
+          "using": "Usando",
+          "used": "Usado"
+        },
+        "actions": {
+          "copy": {
+            "button": "Copiar para a \u00e1rea de transfer\u00eancia",
+            "success": "Copiado!"
+          }
+        },
+        "feedback": {
+          "positive": "\u00datil",
+          "negative": "N\u00e3o foi \u00fatil",
+          "edit": "Editar feedback",
+          "dialog": {
+            "title": "Adicionar um coment\u00e1rio",
+            "submit": "Enviar feedback",
+            "yourFeedback": "Seu feedback..."
+          },
+          "status": {
+            "updating": "Atualizando",
+            "updated": "Feedback atualizado"
+          }
+        }
+      },
+      "history": {
+        "title": "\u00daltimas entradas",
+        "empty": "Vazio assim...",
+        "show": "Mostrar hist\u00f3rico"
+      },
+      "settings": {
+        "title": "Painel de configura\u00e7\u00f5es",
+        "customize": "Personalize as configura\u00e7\u00f5es do seu chat aqui"
+      },
+      "watermark": "LLMs podem errar. Verifique informa\u00e7\u00f5es importantes."
+    },
+    "threadHistory": {
+      "sidebar": {
+        "title": "Conversas anteriores",
+        "filters": {
+          "search": "Buscar",
+          "placeholder": "Buscar conversas..."
+        },
+        "timeframes": {
+          "today": "Hoje",
+          "yesterday": "Ontem",
+          "previous7days": "\u00daltimos 7 dias",
+          "previous30days": "\u00daltimos 30 dias"
+        },
+        "empty": "Nenhuma thread encontrada",
+        "actions": {
+          "close": "Fechar barra lateral",
+          "open": "Abrir barra lateral"
+        }
+      },
+      "thread": {
+        "untitled": "Conversa sem t\u00edtulo",
+        "menu": {
+          "rename": "Renomear",
+          "share": "Compartilhar",
+          "delete": "Excluir"
+        },
+        "actions": {
+          "share": {
+            "title": "Compartilhar link do chat",
+            "button": "Compartilhar",
+            "status": {
+              "copied": "Link copiado",
+              "created": "Link de compartilhamento criado!",
+              "unshared": "Compartilhamento desativado para esta thread"
+            },
+            "error": {
+              "create": "Falha ao criar link de compartilhamento",
+              "unshare": "Falha ao desativar compartilhamento da thread"
+            }
+          },
+          "delete": {
+            "title": "Confirmar exclus\u00e3o",
+            "description": "Isso excluir\u00e1 a thread, suas mensagens e elementos. Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita",
+            "success": "Chat exclu\u00eddo",
+            "inProgress": "Excluindo chat"
+          },
+          "rename": {
+            "title": "Renomear thread",
+            "description": "Digite um novo nome para esta thread",
+            "form": {
+              "name": {
+                "label": "Nome",
+                "placeholder": "Digite o novo nome"
+              }
+            },
+            "success": "Thread renomeada!",
+            "inProgress": "Renomeando thread"
+          }
+        }
+      }
+    },
+    "navigation": {
+      "header": {
+        "chat": "Chat",
+        "readme": "Readme",
+        "theme": {
+          "light": "Tema claro",
+          "dark": "Tema escuro",
+          "system": "Seguir sistema"
+        }
+      },
+      "newChat": {
+        "button": "Novo chat",
+        "dialog": {
+          "title": "Criar novo chat",
+          "description": "Isso limpar\u00e1 o hist\u00f3rico do chat atual. Deseja continuar?",
+          "tooltip": "Novo chat"
+        }
+      },
+      "user": {
+        "menu": {
+          "settings": "Configura\u00e7\u00f5es",
+          "settingsKey": "C",
+          "apiKeys": "Chaves de API",
+          "logout": "Sair"
+        }
+      }
+    },
+    "apiKeys": {
+      "title": "Chaves de API necess\u00e1rias",
+      "description": "Para usar este app, as seguintes chaves de API s\u00e3o necess\u00e1rias. As chaves s\u00e3o armazenadas no armazenamento local do seu dispositivo.",
+      "success": {
+        "saved": "Salvo com sucesso"
+      }
+    },
+    "alerts": {
+      "info": "Informa\u00e7\u00e3o",
+      "note": "Nota",
+      "tip": "Dica",
+      "important": "Importante",
+      "warning": "Aviso",
+      "caution": "Cuidado",
+      "debug": "Depura\u00e7\u00e3o",
+      "example": "Exemplo",
+      "success": "Sucesso",
+      "help": "Ajuda",
+      "idea": "Ideia",
+      "pending": "Pendente",
+      "security": "Seguran\u00e7a",
+      "beta": "Beta",
+      "best-practice": "Boa pr\u00e1tica"
+    },
+    "components": {
+      "MultiSelectInput": {
+        "placeholder": "Selecionar..."
+      }
+    }
+  }
+  
