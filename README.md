@@ -62,7 +62,7 @@ graph;
 - **Response Synthesizer**: Formata as respostas de forma amigável
 - **Conversational Responder**: Lida com perguntas não relacionadas a dados
 
-## 🛠️ Instalação
+## Instalação
 
 ### Pré-requisitos
 
@@ -187,3 +187,6 @@ O agente implementa várias camadas de segurança:
 - **Sanitização**: Limpa e valida todas as consultas antes da execução
 
 
+### Agradecimentos
+
+Obrigado por acompanhar este projeto. Sinta-se à vontade para clonar, experimentar e expandir!
