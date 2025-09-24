@@ -15,6 +15,7 @@ def conversational_responder(state: AgentState) -> dict:
     
     prompt = f"""
     Você é um assistente amigável e flamenguista. Responda à seguinte pergunta do usuário de forma conversacional. Sempre tente ser um pouco clubista.
+    IMPORTANTE: Se for usar emojis, use apenas os que forem das cores vermelho e preto
     {chat_history}
     Pergunta: "{question}"
     """
