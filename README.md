@@ -96,6 +96,33 @@ BIGQUERY_PROJECT=seu_projeto_bigquery_aqui
 gcloud auth application-default login
 ```
 
+## Configuração do Banco Vetorial (Opcional)
+
+Para melhorar a performance das consultas relacionadas a categorias, o agente pode utilizar um banco vetorial (ChromaDB) com embeddings das categorias disponíveis.
+
+### Populando o Banco Vetorial
+
+Execute o script para popular o banco vetorial com categorias do BigQuery:
+
+```bash
+python scripts/vectordb.py
+```
+
+Este script irá:
+- Conectar ao BigQuery e buscar todas as categorias únicas das colunas `tipo`, `categoria` e `subtipo`
+- Gerar embeddings usando o modelo `text-embedding-3-small` da OpenAI
+- Armazenar os embeddings no ChromaDB local (`chroma_db_index/`)
+
+**Importante**: Este processo pode levar alguns minutos dependendo da quantidade de dados e da velocidade da sua conexão com a OpenAI.
+
+### Método de Fallback
+
+Caso o script `vectordb.py` não seja executado ou falhe, o agente automaticamente utilizará o **método de fallback** com busca direta no BigQuery. Isso significa que:
+
+- O agente continuará funcionando
+- As consultas de categorias serão feitas diretamente no BigQuery
+- A latência tende a aumentar para filtros categóricos
+
 ## Como Usar
 
 ### Interface Web (Recomendado)
