@@ -32,8 +32,9 @@ def sql_generator(state: AgentState) -> dict:
     REGRAS ESSENCIAIS:
     1.  **Nomes de Tabela:** SEMPRE use o nome completo da tabela (ex: `projeto.dataset.tabela`) nas cláusulas `FROM` e `JOIN`.
 
-    2.  **Filtros de Texto:** Para buscas em colunas de texto (STRING), SEMPRE use a função `LOWER()` para garantir que a busca não seja sensível a maiúsculas/minúsculas. (ex: `WHERE LOWER(tipo) = 'iluminação pública'`). Além disso, é útil usar LIKE para garantir que a busca seja mais flexível.
-        - Em caso de ambiguidade, priorize o uso da coluna subtipo.
+    2.  **Filtros de Texto:** Para buscas em colunas de texto (STRING), a seção "INFORMAÇÕES DE CONTEXTO SOBRE AS CATEGORIAS" contém os termos mais relevantes encontrados no banco de dados para a pergunta do usuário. Sua tarefa é usar essa informação para construir o filtro `WHERE`.
+        - Use o termo mais provável da lista e, crucialmente, a coluna de origem ('source_column') informada.
+        - Se o contexto fornecer uma correspondência exata, use o operador de igualdade (`=`) e a função `LOWER()`.
 
     3.  **Filtros de Data:** Para todos os filtros de data, use a coluna `data_inicio`.
         - Para um **dia específico** (ex: "no dia 28/11/2024"), use a função `DATE`. Ex: `WHERE DATE(data_inicio) = '2024-11-28'`.
