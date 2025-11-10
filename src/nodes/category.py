@@ -4,7 +4,8 @@ from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
 from ..config import logger, CHAMADOS_TABLE_FULL_PATH, CATEGORICAL_COLUMNS
 from ..bigquery import get_bq_client
-from ..models import AgentState
+from ..models import AgentState, format_chat_history
+from ..llm import make_llm
 
 load_dotenv()
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -12,19 +13,59 @@ EMBEDDING_MODEL_NAME = "text-embedding-3-small"
 CHROMA_PATH = os.path.join(project_root, "chroma_db_index")
 COLLECTION_NAME = "categories_1746"
 
+def _expand_query_with_context(state: AgentState) -> str:
+    """
+    Expande a pergunta atual com contexto relevante da conversa anterior.
+    Retorna a pergunta original se não houver histórico.
+    """
+    current_question = state['messages'][-1].content
+    chat_history = format_chat_history(state['messages'][:-1])
+    
+    if not chat_history:
+        logger.info("Sem histórico de conversa. Usando pergunta original.")
+        return current_question
+    
+    # Se houver histórico, expande a query usando LLM
+    llm = make_llm()
+    prompt = f"""
+        {chat_history}
+
+        A pergunta atual do usuário é: "{current_question}"
+
+        Sua tarefa é criar uma versão expandida da pergunta atual que inclua APENAS os termos-chave relevantes mencionados na conversa anterior que são necessários para entender a pergunta.
+
+        IMPORTANTE:
+        - Se a pergunta atual for completa e auto-suficiente, retorne-a exatamente como está.
+        - Se a pergunta atual for contextual (ex: "e os com menos chamados?", "e quais os bairros?"), extraia APENAS os termos-chave da conversa anterior que completam o sentido (ex: tipo de chamado, período, categoria mencionada).
+        - NÃO adicione contexto conversacional, explicações, ou informações irrelevantes.
+        - NÃO adicione informações sobre resultados anteriores ou comparações.
+        - Foque apenas em termos que seriam úteis para buscar categorias em um banco de dados
+
+        Retorne APENAS a pergunta expandida com os termos-chave necessários, sem explicações adicionais.
+        """
+    
+    try:
+        expanded = llm.invoke(prompt).content.strip()
+        expanded = expanded.strip('"').strip("'")
+        logger.info(f"Query expandida: '{current_question}' -> '{expanded}'")
+        return expanded
+    except Exception as e:
+        logger.warning(f"Falha ao expandir query: {e}. Usando pergunta original.")
+        return current_question
+
 def _fetch_from_rag(state: AgentState) -> str | None:
     """
     Busca categorias textuais e suas respectivas colunas utilizando um banco vetorial (RAG).
     """
     logger.info("Tentando buscar categorias via RAG (ChromaDB)...")
-    question = state['messages'][-1].content
+    expanded_query = _expand_query_with_context(state)
     try:
         embedding_function = OpenAIEmbeddings(model=EMBEDDING_MODEL_NAME, api_key=os.getenv("OPENAI_API_KEY"))
         client = chromadb.PersistentClient(path=CHROMA_PATH)
         collection = client.get_collection(name=COLLECTION_NAME)
 
         results = collection.query(
-            query_texts=[question],
+            query_texts=[expanded_query],
             n_results=5,
             include=["documents", "metadatas"]
         )
