@@ -9,10 +9,12 @@ from src.config import logger
 
 SQLITE_PATH = "agent_memory.sqlite"
 
-def _invoke_blocking(app, text: str, thread_id: str):
-    inputs = {"messages": [HumanMessage(content=text)]}
-    config = {"configurable": {"thread_id": thread_id}}
-    return app.invoke(inputs, config=config)
+def _invoke_blocking(text: str, thread_id: str):
+    with SqliteSaver.from_conn_string(SQLITE_PATH) as saver:
+        app = build_graph().compile(checkpointer=saver)
+        inputs = {"messages": [HumanMessage(content=text)]}
+        config = {"configurable": {"thread_id": thread_id}}
+        return app.invoke(inputs, config=config)
 
 @cl.on_chat_start
 async def on_start():
@@ -50,14 +52,14 @@ async def on_msg(msg: cl.Message):
         return
 
     app = cl.user_session.get("app")
-    thread_id = cl.user_session.get("thread_id", f"thread-{cl.context.session.id}")
-
     if app is None:
         await cl.Message(content="Agente indisponível nesta sessão. Reabra o chat.").send()
         return
 
+    thread_id = cl.user_session.get("thread_id", f"thread-{cl.context.session.id}")
+
     try:
-        final_state = await asyncio.to_thread(_invoke_blocking, app, txt, thread_id)
+        final_state = await asyncio.to_thread(_invoke_blocking, txt, thread_id)
     except Exception as e:
         logger.error(f"Erro durante a execução do agente: {e}", exc_info=True)
         await cl.Message(content="Agente: Desculpe, ocorreu um erro. Veja `agent.log`.").send()

@@ -43,6 +43,7 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges("intent_router", _route_after_intent, {
         "conversational_responder": "conversational_responder",
         "schema_fetcher": "schema_fetcher",
+        END: END
     })
 
     def _decide_after_schema(state: AgentState):
@@ -68,7 +69,8 @@ def build_graph() -> StateGraph:
         _decide_after_schema,
         {
             "category_fetcher": "category_fetcher",
-            "sql_generator": "sql_generator"
+            "sql_generator": "sql_generator",
+            END: END
         }
     )
 
