@@ -1,8 +1,9 @@
 import os
 import chromadb
 from dotenv import load_dotenv
-from langchain_openai import OpenAIEmbeddings
-from ..config import logger, CHAMADOS_TABLE_FULL_PATH, CATEGORICAL_COLUMNS
+from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+from ..config import logger, CHAMADOS_TABLE_FULL_PATH, CATEGORICAL_COLUMNS, USE_VECTOR_DB
+from .. import config as _config
 from ..bigquery import get_bq_client
 from ..models import AgentState, format_chat_history
 from ..llm import make_llm
@@ -60,9 +61,15 @@ def _fetch_from_rag(state: AgentState) -> str | None:
     logger.info("Tentando buscar categorias via RAG (ChromaDB)...")
     expanded_query = _expand_query_with_context(state)
     try:
-        embedding_function = OpenAIEmbeddings(model=EMBEDDING_MODEL_NAME, api_key=os.getenv("OPENAI_API_KEY"))
+        embedding_fn = OpenAIEmbeddingFunction(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            model_name=EMBEDDING_MODEL_NAME,
+        )
         client = chromadb.PersistentClient(path=CHROMA_PATH)
-        collection = client.get_collection(name=COLLECTION_NAME)
+        collection = client.get_collection(
+            name=COLLECTION_NAME,
+            embedding_function=embedding_fn,
+        )
 
         results = collection.query(
             query_texts=[expanded_query],
@@ -119,14 +126,20 @@ def category_fetcher(state: AgentState) -> dict:
     """
     Orquestra a busca de categorias: tenta o método RAG primeiro e,
     se falhar, usa a consulta direta ao BigQuery como fallback.
+
+    A flag config.USE_VECTOR_DB controla se o RAG é tentado:
+      - True  (default/produção): tenta RAG, fallback se falhar.
+      - False (avaliação):        vai direto ao fallback BigQuery.
     """
     logger.info(">> Nó: Buscador de Categorias (com Fallback)")
 
-    rag_context = _fetch_from_rag(state)
-
-    if rag_context is not None:
-        return {"category_context": rag_context}
+    if _config.USE_VECTOR_DB:
+        rag_context = _fetch_from_rag(state)
+        if rag_context is not None:
+            return {"category_context": rag_context}
+        bq_context = _fetch_from_bigquery()
+        return {"category_context": bq_context}
     else:
-        # Falha no RAG. Aciona o método secundário e mais lento (BigQuery).
+        logger.info("   USE_VECTOR_DB=False. Pulando RAG, usando fallback direto.")
         bq_context = _fetch_from_bigquery()
         return {"category_context": bq_context}
