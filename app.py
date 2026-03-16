@@ -65,9 +65,13 @@ async def on_msg(msg: cl.Message):
         await cl.Message(content="Agente: Desculpe, ocorreu um erro. Veja `agent.log`.").send()
         return
 
+    error = final_state.get("error") if final_state else None
     answer = final_state.get("answer") if final_state else None
-    if not answer and final_state and final_state.get("messages"):
-        answer = final_state["messages"][-1].get("content")
+
+    if error:
+        answer = f"Não foi possível processar sua solicitação: {error}"
+    elif not answer and final_state and final_state.get("messages"):
+        answer = final_state["messages"][-1].content
 
     await cl.Message(content=answer or "(sem resposta)").send()
 

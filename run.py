@@ -26,7 +26,9 @@ def main():
             try:
                 final_state = compiled_graph.invoke(inputs, config=config)
 
-                if final_state and final_state.get("answer"):
+                if final_state and final_state.get("error"):
+                    print(f"Agente: Não foi possível processar sua solicitação: {final_state['error']}")
+                elif final_state and final_state.get("answer"):
                     print(f"Agente: {final_state['answer']}")
 
             except Exception as e:
