@@ -1,8 +1,7 @@
 import os
 import sys
 import chromadb
-from google.cloud import bigquery
-from langchain_openai import OpenAIEmbeddings
+from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
@@ -37,8 +36,11 @@ def main():
         logger.error(f"Falha ao buscar dados do BigQuery: {e}")
         return
 
-    logger.info(f"Carregando modelo de embedding: {EMBEDDING_MODEL_NAME} (isso pode levar um momento)...")
-    embedding_function = OpenAIEmbeddings(model=EMBEDDING_MODEL_NAME, api_key=os.getenv("OPENAI_API_KEY"))
+    logger.info(f"Carregando modelo de embedding: {EMBEDDING_MODEL_NAME}...")
+    embedding_fn = OpenAIEmbeddingFunction(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model_name=EMBEDDING_MODEL_NAME,
+    )
 
     logger.info(f"Configurando ChromaDB no diretório: {CHROMA_PATH}")
     chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -47,7 +49,10 @@ def main():
         logger.warning(f"Coleção '{COLLECTION_NAME}' já existe. Removendo para recriar.")
         chroma_client.delete_collection(name=COLLECTION_NAME)
 
-    collection = chroma_client.create_collection(name=COLLECTION_NAME)
+    collection = chroma_client.create_collection(
+        name=COLLECTION_NAME,
+        embedding_function=embedding_fn,
+    )
     
     logger.info("Iniciando a adição de documentos ao ChromaDB (pode levar vários minutos)...")
     
